@@ -49,7 +49,7 @@ def parse_combined_message(raw_message):
 
         fd60: Gate_01, 09, 1, 2, 3, 4, 5
     """
-  raw_message = raw_message.strip()
+    raw_message = raw_message.strip()
     raw_message = raw_message.replace("\x00", "")
 
     # Remove optional Meshtastic prefix.
@@ -73,7 +73,7 @@ def parse_combined_message(raw_message):
         raise ValueError("node_id is empty")
 
     try:
-      pedestrian_count = int(parts[1])
+        pedestrian_count = int(parts[1])
         a = int(parts[2])
         b = int(parts[3])
         c = int(parts[4])
@@ -197,7 +197,7 @@ def process_message(serial_connection, raw_message):
     try:
         node_id, pedestrian_count, a, b, c, d, e = parse_combined_message(raw_message)
 
- except ValueError:
+    except ValueError:
         # Wrong format, so do nothing and do not send ACK
         return
 
