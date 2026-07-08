@@ -170,25 +170,18 @@ def upload_survey_counts(node_id, a, b, c, d, e):
 
     return post_json(SURVEY_API_URL, payload)
 def process_message(serial_connection, raw_message):
-    """
-    Handles one received radio message.
-
+    """ Handles one received radio message.
     Order:
         1. Receive message
         2. Check message format
-        3. If valid, send ACK password
+        3. If valid, send the ACK password
         4. Upload pedestrian count
-        5. Upload survey counts
-    """
-
+        5. Upload survey counts. """
+    
     raw_message = raw_message.strip()
 
-    # Ignore empty messages silently
+    # Ignore empty messages
     if not raw_message:
-        return
-
-    # Ignore own ACK password echo silently
-    if raw_message == ACK_PASSWORD:
         return
 
     timestamp = datetime.now().isoformat(timespec="seconds")
