@@ -25,18 +25,31 @@ SURVEY_API_URL = "https://faridfarahmand.net/CEI/api_survey.php"
 # -----------------------------
 ACK_PASSWORD = "LED"
 
+# -----------------------------
+# Transmitter health monitoring
+# -----------------------------
+# Transmitter should send one message every hour while awake.
+EXPECTED_INTERVAL_SECONDS = 60 * 60
+
+# Missing 3 messages in a row means possible problem.
+MAX_MISSED_MESSAGES = 3
+
+# We use 4 hours as the warning timeout:
+# 1 expected message/hour + 3 missed messages = about 4 hours.
+OFFLINE_TIMEOUT_SECONDS = EXPECTED_INTERVAL_SECONDS * (MAX_MISSED_MESSAGES + 1)
+
+last_awake_message_time = None
+transmitter_awake = False
+problem_notified = False
+last_node_id = None
+
 def parse_combined_message(raw_message):
     """
     Expected message format:
-
-        Gate_01, 09, A, B, C, D, E
-
+        Gate_01, 09, A, B, C, D, E, mode, battery
     Example:
-
-        Gate_01, 09, 1, 2, 3, 4, 5
-
+        Gate_01, 09, 1, 2, 3, 4, 5, 1/0, 320
     Meaning:
-
         node_id = Gate_01
         pedestrian_count = 09
         a = 1
@@ -44,34 +57,25 @@ def parse_combined_message(raw_message):
         c = 3
         d = 4
         e = 5
-
-    Also accepts Meshtastic-style prefix:
-
-        fd60: Gate_01, 09, 1, 2, 3, 4, 5
+        mode = 1 awake, 0 sleep
+        battery_code = 320 (3.2V)
     """
     raw_message = raw_message.strip()
     raw_message = raw_message.replace("\x00", "")
 
     # Remove optional Meshtastic prefix.
-    # Example:
-    # "fd60: Gate_01, 09, 1, 2, 3, 4, 5"
-    # becomes:
-    # "Gate_01, 09, 1, 2, 3, 4, 5"
     if ":" in raw_message:
         raw_message = raw_message.split(":", 1)[1].strip()
 
     parts = [part.strip() for part in raw_message.split(",")]
 
-    if len(parts) != 7:
-        raise ValueError(
-            "Message must have 7 fields: node_id, pedestrian_count, a, b, c, d, e"
-        )
+    if len(parts) != 9:
+        raise ValueError("Message must have 9 fields: node_id, pedestrian_count, a, b, c, d, e, mode, battery_code"  )
 
     node_id = parts[0]
 
     if not node_id:
         raise ValueError("node_id is empty")
-
     try:
         pedestrian_count = int(parts[1])
         a = int(parts[2])
@@ -79,25 +83,27 @@ def parse_combined_message(raw_message):
         c = int(parts[4])
         d = int(parts[5])
         e = int(parts[6])
+        mode = int(parts[7])
+        battery_code = int(parts[8])
+        
     except ValueError:
-        raise ValueError("pedestrian_count and survey option counts must be integers")
-
-    return node_id, pedestrian_count, a, b, c, d, e
-
+        raise ValueError("pedestrian_count, survey values, mode, and battery_code must be integers")
+        
+    if mode not in [0, 1]:
+        raise ValueError("mode must be 0 for sleep or 1 for awake")
+        
+    battery_voltage = battery_code /100
+    
+    return node_id, pedestrian_count, a, b, c, d, e, mode, battery_code, battery_voltage
 
 def send_acknowledgement(serial_connection):
-    """
-    Sends only the secret ACK password back to the transmitter.
-    """
-
+    #Sends the secret ACK password back to the transmitter.
     serial_connection.write((ACK_PASSWORD + "\n").encode("utf-8"))
     serial_connection.flush()
-
     print(f"ACK password sent")
+    
 def post_json(api_url, payload):
-    """
-    Sends JSON data to one API endpoint.
-    """
+    #Sends JSON data to one API endpoint.
 
     json_data = json.dumps(payload).encode("utf-8")
 
@@ -129,16 +135,10 @@ def post_json(api_url, payload):
         return False, None, str(error)
 
 def upload_pedestrian_count(node_id, pedestrian_count):
-    """
-    Uploads pedestrian count.
-
-    JSON format:
-        {
+    """ Uploads pedestrian count. JSON format:
             "node_id": "Gate_01",
             "count": 9
-        }
     """
-
     payload = {
         "node_id": node_id,
         "count": pedestrian_count
@@ -147,37 +147,70 @@ def upload_pedestrian_count(node_id, pedestrian_count):
 
 
 def upload_survey_counts(node_id, a, b, c, d, e):
-    """
-    Uploads survey option counts.
-    JSON format:
-        {
+    """ Uploads survey option counts. JSON format:
             "node_id": "Gate_01",
-            "a": 1,
-            "b": 2,
-            "c": 3,
-            "d": 4,
-            "e": 5
-        }
+            "a": 1,  "b": 2,   "c": 3,  "d": 4, "e": 5
     """
-    payload = {
-        "node_id": node_id,
-        "a": a,
-        "b": b,
-        "c": c,
-        "d": d,
-        "e": e
-    }
-
+    payload = {"node_id": node_id,  "a": a,   "b": b, "c": c, "d": d,  "e": e }
     return post_json(SURVEY_API_URL, payload)
+
+def notify_transmitter_problem(node_id):
+    """
+    This function notifies that the transmitter may have a problem.
+    Right now, it only prints a warning.
+    Later, this can be changed to send an email, text message,
+    Slack message, or another API alert.
+    """
+
+    timestamp = datetime.now().isoformat(timespec="seconds")
+
+    print("\n================ WARNING ================")
+    print(f"[{timestamp}] Possible transmitter problem detected.")
+    print(f"Node: {node_id}")
+    print("Reason: No awake message received for too long.")
+    print("=========================================\n")
+
+def check_transmitter_health():
+    """
+    Checks if the transmitter has missed too many expected messages.
+    If transmitter is sleeping, this function does nothing.
+    If transmitter is awake and no message is received for too long,
+    it prints a warning.
+    """
+
+    global last_awake_message_time
+    global transmitter_awake
+    global problem_notified
+    global last_node_id
+
+    if not transmitter_awake:
+        return
+
+    if last_awake_message_time is None:
+        return
+
+    elapsed_time = time.time() - last_awake_message_time
+
+    if elapsed_time > OFFLINE_TIMEOUT_SECONDS and not problem_notified:
+        notify_transmitter_problem(last_node_id)
+        problem_notified = True
+
 def process_message(serial_connection, raw_message):
     """ Handles one received radio message.
     Order:
         1. Receive message
         2. Check message format
         3. If valid, send the ACK password
-        4. Upload pedestrian count
-        5. Upload survey counts. """
+        4. Update transmitter awake/sleep status
+        5. Upload pedestrian count
+        6. Upload survey counts.
+        7. Show battery voltage 
+    """
     
+    global last_awake_message_time
+    global transmitter_awake
+    global problem_notified
+    global last_node_id
     raw_message = raw_message.strip()
 
     # Ignore empty messages
@@ -188,7 +221,7 @@ def process_message(serial_connection, raw_message):
     print(f"\n[{timestamp}] Received message: {raw_message}")
 
     try:
-        node_id, pedestrian_count, a, b, c, d, e = parse_combined_message(raw_message)
+        node_id, pedestrian_count, a, b, c, d, e, mode, battery_code = parse_combined_message(raw_message)
 
     except ValueError:
         # Wrong format, so do nothing and do not send ACK
@@ -201,10 +234,28 @@ def process_message(serial_connection, raw_message):
     print(f"Parsed C: {c}")
     print(f"Parsed D: {d}")
     print(f"Parsed E: {e}")
+    print(f"Parsed mode: {mode}")
+    print(f"Parsed battery code: {battery_code}")
 
     # Send ACK only after the message format is valid
     send_acknowledgement(serial_connection)
+    
+    # Update transmitter awake/sleep status
+    last_node_id = node_id
+    if mode == 1:
+        transmitter_awake = True
+        last_awake_message_time = time.time()
+        problem_notified = False
+        print("Transmitter status: AWAKE")
+        print("Health monitoring is active.")
 
+    elif mode == 0:
+        transmitter_awake = False
+        last_awake_message_time = None
+        problem_notified = False
+        print("Transmitter status: SLEEP")
+        print("Health monitoring paused.")
+    
     # Upload pedestrian count
     ped_success, ped_status, ped_response = upload_pedestrian_count(
         node_id,
@@ -219,14 +270,7 @@ def process_message(serial_connection, raw_message):
         print(f"Server response/error: {ped_response}")
       
   # Upload survey counts
-    survey_success, survey_status, survey_response = upload_survey_counts(
-        node_id,
-        a,
-        b,
-        c,
-        d,
-        e
-    )
+    survey_success, survey_status, survey_response = upload_survey_counts(node_id, a, b, c, d, e )
 
     if survey_success:
         print(f"Survey upload successful. HTTP status: {survey_status}")
@@ -234,6 +278,9 @@ def process_message(serial_connection, raw_message):
         print("Survey upload failed.")
         print(f"HTTP status: {survey_status}")
         print(f"Server response/error: {survey_response}")
+
+  # Battery data for future diagram
+    print(f"Battery voltage recorded: {battery_voltage:.2f} V")
 
 def main():
     print("Combined pedestrian + survey receiver program started.")
@@ -271,7 +318,9 @@ def main():
                     process_message(serial_connection, buffer)
                     buffer = ""
                     last_data_time = None
-
+            # Check whether awake transmitter has missed too many messages
+            check_transmitter_health()
+            
             time.sleep(0.05)
           
     except KeyboardInterrupt:
