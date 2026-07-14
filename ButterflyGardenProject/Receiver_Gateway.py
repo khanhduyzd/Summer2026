@@ -94,7 +94,7 @@ def parse_combined_message(raw_message):
         
     battery_voltage = battery_code /100
     
-    return node_id, pedestrian_count, a, b, c, d, e, mode, battery_code, battery_voltage
+    return node_id, pedestrian_count, a, b, c, d, e, mode, battery_code
 
 def send_acknowledgement(serial_connection):
     #Sends the secret ACK password back to the transmitter.
@@ -222,7 +222,7 @@ def process_message(serial_connection, raw_message):
 
     try:
         node_id, pedestrian_count, a, b, c, d, e, mode, battery_code = parse_combined_message(raw_message)
-
+         battery_voltage = battery_code / 100
     except ValueError:
         # Wrong format, so do nothing and do not send ACK
         return
