@@ -35,8 +35,8 @@ EXPECTED_INTERVAL_SECONDS = 60 * 60
 MAX_MISSED_MESSAGES = 3
 
 # We use 4 hours as the warning timeout:
-# 1 expected message/hour + 3 missed messages = about 4 hours.
-OFFLINE_TIMEOUT_SECONDS = EXPECTED_INTERVAL_SECONDS * (MAX_MISSED_MESSAGES + 1)
+# 1 expected message/hour + 3 missed messages = about 3 hours.
+OFFLINE_TIMEOUT_SECONDS = EXPECTED_INTERVAL_SECONDS * MAX_MISSED_MESSAGES
 
 last_awake_message_time = None
 transmitter_awake = False
