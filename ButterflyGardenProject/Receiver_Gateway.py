@@ -67,29 +67,15 @@ def log_message(message):
     with open(TERMINAL_LOG_FILE, "a") as file:
         file.write(full_message + "\n")
 
-def update_dashboard_status(
-    node_id,
-    pedestrian_count,
-    a,
-    b,
-    c,
-    d,
-    e,
-    mode,
-    battery_voltage,
-    ack_status,
-    upload_status
-):
+def update_dashboard_status(node_id, pedestrian_count, a, b, c, d, e, mode, battery_voltage, ack_status, upload_status):
     """
     Writes the latest radio and Raspberry Pi status to status.json.
-
     The dashboard.py webpage reads status.json and displays:
     - radio/node status
     - RPI status
     - latest data values
     - battery voltage
     - ACK status
-    - upload status
     """
 
     if mode == 1:
@@ -114,7 +100,6 @@ def update_dashboard_status(
         "rpi": {
             "receiver_id": "RPI_01",
             "rpi_status": "online",
-            "serial_port": SERIAL_PORT,
             "baud_rate": BAUD_RATE,
             "upload_status": upload_status,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -127,19 +112,7 @@ def update_dashboard_status(
 def parse_combined_message(raw_message):
     """
     Expected message format:
-        Gate_01, 09, A, B, C, D, E, mode, battery
-    Example:
-        Gate_01, 09, 1, 2, 3, 4, 5, 1/0, 320
-    Meaning:
-        node_id = Gate_01
-        pedestrian_count = 09
-        a = 1
-        b = 2
-        c = 3
-        d = 4
-        e = 5
-        mode = 1 awake, 0 sleep
-        battery_code = 320 (3.2V)
+        Gate_01, 09, A, B, C, D, E, mode, battery_code
     """
     raw_message = raw_message.strip()
     raw_message = raw_message.replace("\x00", "")
@@ -173,7 +146,7 @@ def parse_combined_message(raw_message):
     if mode not in [0, 1]:
         raise ValueError("mode must be 0 for sleep or 1 for awake")
         
-    battery_voltage = battery_code /100
+    battery_voltage = (1.024*4095)/battery_code
     
     return node_id, pedestrian_count, a, b, c, d, e, mode, battery_code
 
@@ -285,7 +258,6 @@ def process_message(serial_connection, raw_message):
         4. Update transmitter awake/sleep status
         5. Upload pedestrian count
         6. Upload survey counts.
-        7. Show battery voltage 
     """
     
     global last_awake_message_time
@@ -308,16 +280,6 @@ def process_message(serial_connection, raw_message):
         # Wrong format, so do nothing and do not send ACK
         return
 
-    log_message(f"Parsed node_id: {node_id}")
-    log_message(f"Parsed pedestrian_count: {pedestrian_count}")
-    log_message(f"Parsed A: {a}")
-    log_message(f"Parsed B: {b}")
-    log_message(f"Parsed C: {c}")
-    log_message(f"Parsed D: {d}")
-    log_message(f"Parsed E: {e}")
-    log_message(f"Parsed mode: {mode}")
-    log_message(f"Parsed battery code: {battery_code}")
-
     # Send ACK only after the message format is valid
     send_acknowledgement(serial_connection)
     
@@ -328,14 +290,12 @@ def process_message(serial_connection, raw_message):
         last_awake_message_time = time.time()
         problem_notified = False
         log_message("Transmitter status: AWAKE")
-        log_message("Health monitoring is active.")
 
     elif mode == 0:
         transmitter_awake = False
         last_awake_message_time = None
         problem_notified = False
         log_message("Transmitter status: SLEEP")
-        log_message("Health monitoring paused.")
     
     # Upload pedestrian count
     ped_success, ped_status, ped_response = upload_pedestrian_count(
@@ -344,7 +304,7 @@ def process_message(serial_connection, raw_message):
     )
 
     if ped_success:
-        log_message(f"Pedestrian upload successful. HTTP status: {ped_status}")
+        log_message(f"Pedestrian upload successful.")
     else:
         log_message("Pedestrian upload failed.")
         log_message(f"HTTP status: {ped_status}")
@@ -354,7 +314,7 @@ def process_message(serial_connection, raw_message):
     survey_success, survey_status, survey_response = upload_survey_counts(node_id, a, b, c, d, e )
 
     if survey_success:
-        log_message(f"Survey upload successful. HTTP status: {survey_status}")
+        log_message(f"Survey upload successful.")
     else:
         log_message("Survey upload failed.")
         log_message(f"HTTP status: {survey_status}")
@@ -380,17 +340,11 @@ def process_message(serial_connection, raw_message):
         "sent",
         upload_status
     )
-
-    log_message(f"Dashboard status updated. Upload status: {upload_status}")
+    
     log_message(f"Battery voltage recorded: {battery_voltage:.2f} V")
  
 
 def main():
-    log_message("Combined pedestrian + survey receiver program started.")
-    log_message(f"Listening on serial port: {SERIAL_PORT}")
-    log_message(f"Baud rate: {BAUD_RATE}")
-    log_message("Press Ctrl+C to stop.\n")
-
     serial_connection = serial.Serial(
         SERIAL_PORT,
         baudrate=BAUD_RATE,
