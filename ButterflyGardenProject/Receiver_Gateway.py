@@ -52,11 +52,8 @@ last_node_id = None
 
 def log_message(message):
     """
-    Prints a message to the Raspberry Pi terminal
-    and also saves it to terminal_log.txt.
-
-    The dashboard reads terminal_log.txt so it can show
-    terminal output on the webpage.
+    Prints a message to the Raspberry Pi terminal and also saves it to terminal_log.txt.
+    The dashboard reads from terminal_log.txt to display terminal output on the webpage.
     """
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -146,8 +143,6 @@ def parse_combined_message(raw_message):
     if mode not in [0, 1]:
         raise ValueError("mode must be 0 for sleep or 1 for awake")
         
-    battery_voltage = (1.024*4095)/battery_code
-    
     return node_id, pedestrian_count, a, b, c, d, e, mode, battery_code
 
 def send_acknowledgement(serial_connection):
@@ -275,7 +270,7 @@ def process_message(serial_connection, raw_message):
 
     try:
         node_id, pedestrian_count, a, b, c, d, e, mode, battery_code = parse_combined_message(raw_message)
-         battery_voltage = battery_code / 100
+        battery_voltage = (1.024*4095)/battery_code
     except ValueError:
         # Wrong format, so do nothing and do not send ACK
         return
