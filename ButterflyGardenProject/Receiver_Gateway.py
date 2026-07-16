@@ -198,11 +198,11 @@ def notify_transmitter_problem(node_id):
 
     timestamp = datetime.now().isoformat(timespec="seconds")
 
-    log_message("\n================ WARNING ================")
-    log_message(f"[{timestamp}] Possible transmitter problem detected.")
-    log_message(f"Node: {node_id}")
-    log_message("Reason: No awake message received for too long.")
-    log_message("=========================================\n")
+    print("\n================ WARNING ================")
+    print(f"[{timestamp}] Possible transmitter problem detected.")
+    print(f"Node: {node_id}")
+    print("Reason: No awake message received for too long.")
+    print("=========================================\n")
 
 def check_transmitter_health():
     """
@@ -269,13 +269,13 @@ def process_message(serial_connection, raw_message):
         transmitter_awake = True
         last_awake_message_time = time.time()
         problem_notified = False
-        log_message("Transmitter status: AWAKE")
+        print("Transmitter status: AWAKE")
 
     elif mode == 0:
         transmitter_awake = False
         last_awake_message_time = None
         problem_notified = False
-        log_message("Transmitter status: SLEEP")
+        print("Transmitter status: SLEEP")
     
     # Upload pedestrian count
     ped_success, ped_status, ped_response = upload_pedestrian_count(
@@ -284,21 +284,21 @@ def process_message(serial_connection, raw_message):
     )
 
     if ped_success:
-        log_message(f"Pedestrian upload successful.")
+        print(f"Pedestrian upload successful.")
     else:
-        log_message("Pedestrian upload failed.")
-        log_message(f"HTTP status: {ped_status}")
-        log_message(f"Server response/error: {ped_response}")
+        print("Pedestrian upload failed.")
+        print(f"HTTP status: {ped_status}")
+        print(f"Server response/error: {ped_response}")
       
   # Upload survey counts
     survey_success, survey_status, survey_response = upload_survey_counts(node_id, a, b, c, d, e )
 
     if survey_success:
-        log_message(f"Survey upload successful.")
+        print(f"Survey upload successful.")
     else:
-        log_message("Survey upload failed.")
-        log_message(f"HTTP status: {survey_status}")
-        log_message(f"Server response/error: {survey_response}")
+        print("Survey upload failed.")
+        print(f"HTTP status: {survey_status}")
+        print(f"Server response/error: {survey_response}")
         
   # Decide upload status for dashboard
     if ped_success and survey_success:
@@ -321,7 +321,7 @@ def process_message(serial_connection, raw_message):
         upload_status
     )
     
-    log_message(f"Battery voltage recorded: {battery_voltage:.2f} V")
+    print(f"Battery voltage recorded: {battery_voltage:.2f} V")
  
 
 def main():
