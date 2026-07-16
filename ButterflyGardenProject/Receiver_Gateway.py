@@ -24,7 +24,6 @@ SURVEY_API_URL = "https://faridfarahmand.net/CEI/api_survey.php"
 # These files are read by dashboard.py
 # -----------------------------
 STATUS_FILE = "status.json"
-TERMINAL_LOG_FILE = "terminal_log.txt"
 
 # -----------------------------
 # Acknowledgement password
@@ -49,34 +48,6 @@ last_awake_message_time = None
 transmitter_awake = False
 problem_notified = False
 last_node_id = None
-
-def log_message(message):
-    """
-    Prints a message to the Raspberry Pi terminal
-    and saves it to terminal_log.txt.
-
-    Timestamp is added only to the first line of the message.
-    """
-
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    message_lines = str(message).splitlines()
-
-    if not message_lines:
-        message_lines = [""]
-
-    formatted_lines = []
-
-    for index, line in enumerate(message_lines):
-        if index == 0:
-            formatted_lines.append(f"[{timestamp}] {line}\n")
-        else:
-            formatted_lines.append(f"                      {line}\n")
-
-    print("".join(formatted_lines), end="")
-
-    with open(TERMINAL_LOG_FILE, "a") as file:
-        file.writelines(formatted_lines)
         
 def update_dashboard_status(node_id, pedestrian_count, a, b, c, d, e, mode, battery_voltage, ack_status, upload_status):
     """
