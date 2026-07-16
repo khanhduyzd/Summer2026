@@ -111,7 +111,7 @@ HTML_PAGE = """
     <h1>RPI Radio Dashboard</h1>
 
     <div class="section">
-        <h2>Section 1: Radio / Transmitter Status</h2>
+        <h2> Node / Transmitter Status</h2>
 
         <table>
             <tr>
@@ -120,7 +120,7 @@ HTML_PAGE = """
             </tr>
 
             <tr>
-                <th>Radio Status</th>
+                <th>Node Status</th>
                 <td class="{{ status.radio.node_status }}">
                     {{ status.radio.node_status }}
                 </td>
@@ -162,7 +162,7 @@ HTML_PAGE = """
     </div>
 
     <div class="section">
-        <h2>Section 2: Raspberry Pi Status</h2>
+        <h2> Raspberry Pi Status</h2>
 
         <table>
             <tr>
