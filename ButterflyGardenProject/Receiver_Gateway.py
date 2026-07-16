@@ -52,8 +52,10 @@ last_node_id = None
 
 def log_message(message):
     """
-    Prints a message to the Raspberry Pi terminal and also saves it to terminal_log.txt.
-    The dashboard reads from terminal_log.txt to display terminal output on the webpage.
+    Prints a message to the Raspberry Pi terminal
+    and saves it to terminal_log.txt.
+
+    Timestamp is added only to the first line of the message.
     """
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -73,17 +75,8 @@ def log_message(message):
 
     print("".join(formatted_lines), end="")
 
-    try:
-        with open(TERMINAL_LOG_FILE, "r") as file:
-            lines = file.readlines()
-    except FileNotFoundError:
-        lines = []
-
-    lines.extend(formatted_lines)
-    lines = lines[-MAX_LOG_LINES:]
-
-    with open(TERMINAL_LOG_FILE, "w") as file:
-        file.writelines(lines)
+    with open(TERMINAL_LOG_FILE, "a") as file:
+        file.writelines(formatted_lines)
         
 def update_dashboard_status(node_id, pedestrian_count, a, b, c, d, e, mode, battery_voltage, ack_status, upload_status):
     """
