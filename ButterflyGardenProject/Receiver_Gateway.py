@@ -57,13 +57,34 @@ def log_message(message):
     """
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    full_message = f"[{timestamp}] {message}"
 
-    print(full_message)
+    message_lines = str(message).splitlines()
 
-    with open(TERMINAL_LOG_FILE, "a") as file:
-        file.write(full_message + "\n")
+    if not message_lines:
+        message_lines = [""]
 
+    formatted_lines = []
+
+    for index, line in enumerate(message_lines):
+        if index == 0:
+            formatted_lines.append(f"[{timestamp}] {line}\n")
+        else:
+            formatted_lines.append(f"                      {line}\n")
+
+    print("".join(formatted_lines), end="")
+
+    try:
+        with open(TERMINAL_LOG_FILE, "r") as file:
+            lines = file.readlines()
+    except FileNotFoundError:
+        lines = []
+
+    lines.extend(formatted_lines)
+    lines = lines[-MAX_LOG_LINES:]
+
+    with open(TERMINAL_LOG_FILE, "w") as file:
+        file.writelines(lines)
+        
 def update_dashboard_status(node_id, pedestrian_count, a, b, c, d, e, mode, battery_voltage, ack_status, upload_status):
     """
     Writes the latest radio and Raspberry Pi status to status.json.
