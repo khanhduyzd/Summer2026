@@ -82,6 +82,7 @@ def update_dashboard_status(node_id, pedestrian_count, a, b, c, d, e, mode, batt
         "rpi": {
             "receiver_id": "RPI_01",
             "rpi_status": "online",
+            "serial_port": SERIAL_PORT,
             "baud_rate": BAUD_RATE,
             "upload_status": upload_status,
             "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
