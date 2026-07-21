@@ -1,44 +1,52 @@
 <?php
 /*
 ------------------------------------------------------------
-Node Status Monitoring Dashboard
+NodeCheck.php
 ------------------------------------------------------------
 
 Purpose:
-This PHP program monitors the status of a remote node.
+This PHP program monitors the latest reported status of a
+remote node.
 
-The node can report its condition by sending a URL request
-to this PHP file.
+A remote device, Raspberry Pi, or user can send a status update
+to this program using cURL.
 
 Input format:
-    https://checking.com/api_status.php?status=yes
-    https://checking.com/api_status.php?status=no
+    https://checking.com/NodeCheck.php?status=yes
+    https://checking.com/NodeCheck.php?status=no
 
 Meaning:
     status=yes  -> The node is working
     status=no   -> The node is down or has a problem
 
-The program saves the latest reported status and the time
-that status was received. When a user opens the page, the
-node status is displayed using a colored button:
+Behavior:
+1. When a status parameter is received, the program saves the
+   latest status and the report time into a JSON file.
+2. When a user visits the main PHP page without a status
+   parameter, the page displays the latest saved node state.
+3. The node state is shown as a button:
+      Green -> yes / node working
+      Red   -> no / node down
 
-    Green button -> Node is working
-    Red button   -> Node is down
+Example cURL commands:
+    curl "https://checking.com/NodeCheck.php?status=yes"
+    curl "https://checking.com/NodeCheck.php?status=no"
 
-This PHP file should be placed on a web server that supports PHP.
+Dashboard URL:
+    https://checking.com/NodeCheck.php
 ------------------------------------------------------------
 */
 
-// File used to save the latest node status
+// File used to save latest node status on the server
 $status_file = "node_status_data.json";
 
-// Default data before the first report is received
+// Default data before the first status update
 $default_data = [
     "status" => "no",
     "reported_time" => "No status reported yet"
 ];
 
-// Load previous status data if it exists
+// Load saved status data
 if (file_exists($status_file)) {
     $json_data = file_get_contents($status_file);
     $data = json_decode($json_data, true);
@@ -50,18 +58,32 @@ if (file_exists($status_file)) {
     $data = $default_data;
 }
 
-// Read input parameter from URL
-// Example: api_status.php?status=yes
+// Check whether a new status was sent
 if (isset($_GET["status"])) {
     $new_status = strtolower(trim($_GET["status"]));
 
-    // Only accept yes or no
     if ($new_status === "yes" || $new_status === "no") {
         $data["status"] = $new_status;
         $data["reported_time"] = date("Y-m-d H:i:s");
 
-        // Save latest status to file
-        file_put_contents($status_file, json_encode($data, JSON_PRETTY_PRINT));
+        file_put_contents(
+            $status_file,
+            json_encode($data, JSON_PRETTY_PRINT)
+        );
+
+        // Simple response for cURL users
+        if (php_sapi_name() !== "cli") {
+            header("Content-Type: text/plain");
+            echo "Status updated successfully.\n";
+            echo "Node status: " . $data["status"] . "\n";
+            echo "Reported time: " . $data["reported_time"] . "\n";
+            exit;
+        }
+    } else {
+        header("Content-Type: text/plain");
+        echo "Invalid status value.\n";
+        echo "Use status=yes or status=no.\n";
+        exit;
     }
 }
 
@@ -80,7 +102,6 @@ if ($data["status"] === "yes") {
 <head>
     <title>Node Status Dashboard</title>
 
-    <!-- Refresh page every 10 seconds -->
     <meta http-equiv="refresh" content="10">
 
     <style>
@@ -91,7 +112,7 @@ if ($data["status"] === "yes") {
         }
 
         .container {
-            max-width: 700px;
+            max-width: 750px;
             margin: auto;
             background-color: white;
             padding: 30px;
@@ -163,10 +184,11 @@ if ($data["status"] === "yes") {
         <h1>Node Status Dashboard</h1>
 
         <div class="description">
-            <strong>Purpose:</strong><br>
-            This dashboard monitors the state of a remote node. The node reports
-            whether it is working or down by sending a status value to this PHP page.
-            The latest status and report time are saved on the server.
+            <strong>What this node does:</strong><br>
+            This dashboard monitors the latest reported state of a remote node.
+            The node can be a transmitter, sensor, Raspberry Pi, or any remote
+            device that needs to report whether it is working or down.
+            The latest status is saved on the server and displayed here.
         </div>
 
         <button class="status-button <?php echo $button_class; ?>">
@@ -174,6 +196,10 @@ if ($data["status"] === "yes") {
         </button>
 
         <div class="time-box">
+            <strong>Latest reported status:</strong>
+            <?php echo htmlspecialchars($data["status"]); ?>
+            <br><br>
+
             <strong>Status reported time:</strong><br>
             <?php echo htmlspecialchars($data["reported_time"]); ?>
         </div>
@@ -181,16 +207,16 @@ if ($data["status"] === "yes") {
         <div class="usage">
             <strong>How to use this program:</strong><br><br>
 
-            To report that the node is working, open or call:<br>
-            <code>https://checking.com/api_status.php?status=yes</code>
+            To update the node as working, run:<br>
+            <code>curl "https://checking.com/NodeCheck.php?status=yes"</code>
             <br><br>
 
-            To report that the node is down, open or call:<br>
-            <code>https://checking.com/api_status.php?status=no</code>
+            To update the node as down, run:<br>
+            <code>curl "https://checking.com/NodeCheck.php?status=no"</code>
             <br><br>
 
-            To view the dashboard only, open:<br>
-            <code>https://checking.com/api_status.php</code>
+            To view the latest node status, open:<br>
+            <code>https://checking.com/NodeCheck.php</code>
         </div>
     </div>
 </body>
