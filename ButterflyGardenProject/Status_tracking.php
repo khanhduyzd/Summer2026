@@ -1,29 +1,47 @@
 <?php
-// File used to save the latest status data on the server
-$status_file = "status_data.json";
+/*
+------------------------------------------------------------
+Node Status Monitoring Dashboard
+------------------------------------------------------------
 
-// If the Raspberry Pi does not update for this long,
-// the page will automatically show RPI as offline/problem.
-$rpi_timeout_seconds = 10 * 60; // 10 minutes
+Purpose:
+This PHP program monitors the status of a remote node.
 
-// Default status before any update is received
+The node can report its condition by sending a URL request
+to this PHP file.
+
+Input format:
+    https://checking.com/api_status.php?status=yes
+    https://checking.com/api_status.php?status=no
+
+Meaning:
+    status=yes  -> The node is working
+    status=no   -> The node is down or has a problem
+
+The program saves the latest reported status and the time
+that status was received. When a user opens the page, the
+node status is displayed using a colored button:
+
+    Green button -> Node is working
+    Red button   -> Node is down
+
+This PHP file should be placed on a web server that supports PHP.
+------------------------------------------------------------
+*/
+
+// File used to save the latest node status
+$status_file = "node_status_data.json";
+
+// Default data before the first report is received
 $default_data = [
-    "rpi" => [
-        "status" => "no",
-        "time" => "No update yet"
-    ],
-    "transmitter" => [
-        "status" => "no",
-        "time" => "No update yet"
-    ]
+    "status" => "no",
+    "reported_time" => "No status reported yet"
 ];
 
-// --------------------------------------
-// Load existing saved data
-// --------------------------------------
+// Load previous status data if it exists
 if (file_exists($status_file)) {
-    $json = file_get_contents($status_file);
-    $data = json_decode($json, true);
+    $json_data = file_get_contents($status_file);
+    $data = json_decode($json_data, true);
 
     if (!is_array($data)) {
         $data = $default_data;
@@ -32,71 +50,35 @@ if (file_exists($status_file)) {
     $data = $default_data;
 }
 
-// Make sure both sections exist
-if (!isset($data["rpi"])) {
-    $data["rpi"] = $default_data["rpi"];
-}
+// Read input parameter from URL
+// Example: api_status.php?status=yes
+if (isset($_GET["status"])) {
+    $new_status = strtolower(trim($_GET["status"]));
 
-if (!isset($data["transmitter"])) {
-    $data["transmitter"] = $default_data["transmitter"];
-}
+    // Only accept yes or no
+    if ($new_status === "yes" || $new_status === "no") {
+        $data["status"] = $new_status;
+        $data["reported_time"] = date("Y-m-d H:i:s");
 
-// --------------------------------------
-// Read input parameters
-// --------------------------------------
-$device = isset($_GET["device"]) ? strtolower($_GET["device"]) : "";
-$status = isset($_GET["status"]) ? strtolower($_GET["status"]) : "";
-
-// --------------------------------------
-// Update status if valid parameters are provided
-// --------------------------------------
-if (
-    ($device == "rpi" || $device == "transmitter") &&
-    ($status == "yes" || $status == "no")
-) {
-    $data[$device]["status"] = $status;
-    $data[$device]["time"] = date("Y-m-d H:i:s");
-
-    file_put_contents($status_file, json_encode($data, JSON_PRETTY_PRINT));
-}
-
-// --------------------------------------
-// Automatic RPI timeout check
-// If the RPI has not sent heartbeat recently,
-// --------------------------------------
-if ($data["rpi"]["time"] != "No update yet") {
-    $last_rpi_time = strtotime($data["rpi"]["time"]);
-    $current_time = time();
-
-    if (($current_time - $last_rpi_time) > $rpi_timeout_seconds) {
-        $data["rpi"]["status"] = "no";
+        // Save latest status to file
+        file_put_contents($status_file, json_encode($data, JSON_PRETTY_PRINT));
     }
 }
 
-// --------------------------------------
-// Helper functions
-// --------------------------------------
-function led_color($status) {
-    if ($status == "yes") {
-        return "green";
-    } else {
-        return "red";
-    }
-}
-
-function status_text($status) {
-    if ($status == "yes") {
-        return "ONLINE / OK";
-    } else {
-        return "OFFLINE / PROBLEM";
-    }
+// Decide button color and display text
+if ($data["status"] === "yes") {
+    $button_class = "green-button";
+    $status_text = "NODE WORKING";
+} else {
+    $button_class = "red-button";
+    $status_text = "NODE DOWN";
 }
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>RPI and Transmitter Status</title>
+    <title>Node Status Dashboard</title>
 
     <!-- Refresh page every 10 seconds -->
     <meta http-equiv="refresh" content="10">
@@ -104,109 +86,112 @@ function status_text($status) {
     <style>
         body {
             font-family: Arial, sans-serif;
-            background: #f2f2f2;
+            background-color: #f2f2f2;
             margin: 30px;
         }
 
-        h1 {
+        .container {
+            max-width: 700px;
+            margin: auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 0 10px #cccccc;
             text-align: center;
+        }
+
+        h1 {
             color: #222222;
         }
 
-        .container {
-            max-width: 800px;
-            margin: auto;
-        }
-
-        .box {
-            background: white;
-            padding: 25px;
-            margin: 20px 0;
-            border-radius: 10px;
-            box-shadow: 0 0 8px #cccccc;
-        }
-
-        h2 {
-            margin-top: 0;
-            color: #333333;
-        }
-
-        .status-row {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            font-size: 22px;
-            font-weight: bold;
-        }
-
-        .led {
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            display: inline-block;
-            box-shadow: 0 0 8px #555555;
-        }
-
-        .green {
-            background: green;
-        }
-
-        .red {
-            background: red;
-        }
-
-        .time {
-            margin-top: 15px;
-            font-size: 16px;
-            color: #555555;
-        }
-
-        .note {
-            max-width: 800px;
-            margin: 20px auto;
+        .description {
+            text-align: left;
+            background-color: #f8f8f8;
             padding: 15px;
-            background: #fff8dc;
+            border-left: 5px solid #555555;
+            margin-bottom: 25px;
+            line-height: 1.5;
+        }
+
+        .status-button {
+            border: none;
+            color: white;
+            padding: 25px 50px;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: default;
+            margin: 20px 0;
+        }
+
+        .green-button {
+            background-color: green;
+        }
+
+        .red-button {
+            background-color: red;
+        }
+
+        .time-box {
+            margin-top: 20px;
+            font-size: 18px;
+            color: #333333;
+            padding: 15px;
+            background-color: #eeeeee;
+            border-radius: 8px;
+        }
+
+        .usage {
+            text-align: left;
+            margin-top: 30px;
+            background-color: #fff8dc;
+            padding: 15px;
             border-left: 5px solid #e0b000;
-            font-size: 15px;
+            line-height: 1.5;
+        }
+
+        code {
+            background-color: #eeeeee;
+            padding: 3px 6px;
+            border-radius: 4px;
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h1>RPI and Transmitter Status Dashboard</h1>
+        <h1>Node Status Dashboard</h1>
 
-        <div class="box">
-            <h2>Raspberry Pi Status</h2>
-
-            <div class="status-row">
-                <span class="led <?php echo led_color($data["rpi"]["status"]); ?>"></span>
-                <span><?php echo status_text($data["rpi"]["status"]); ?></span>
-            </div>
-
-            <div class="time">
-                Last RPI update:
-                <?php echo htmlspecialchars($data["rpi"]["time"]); ?>
-            </div>
+        <div class="description">
+            <strong>Purpose:</strong><br>
+            This dashboard monitors the state of a remote node. The node reports
+            whether it is working or down by sending a status value to this PHP page.
+            The latest status and report time are saved on the server.
         </div>
 
-        <div class="box">
-            <h2>Transmitter Status</h2>
+        <button class="status-button <?php echo $button_class; ?>">
+            <?php echo $status_text; ?>
+        </button>
 
-            <div class="status-row">
-                <span class="led <?php echo led_color($data["transmitter"]["status"]); ?>"></span>
-                <span><?php echo status_text($data["transmitter"]["status"]); ?></span>
-            </div>
-
-            <div class="time">
-                Last transmitter update:
-                <?php echo htmlspecialchars($data["transmitter"]["time"]); ?>
-            </div>
+        <div class="time-box">
+            <strong>Status reported time:</strong><br>
+            <?php echo htmlspecialchars($data["reported_time"]); ?>
         </div>
-    </div>
 
-    <div class="note">
-        RPI status is based on heartbeat updates. If the Raspberry Pi does not send an update for more than 10 minutes, the RPI LED will automatically turn red.
+        <div class="usage">
+            <strong>How to use this program:</strong><br><br>
+
+            To report that the node is working, open or call:<br>
+            <code>https://checking.com/api_status.php?status=yes</code>
+            <br><br>
+
+            To report that the node is down, open or call:<br>
+            <code>https://checking.com/api_status.php?status=no</code>
+            <br><br>
+
+            To view the dashboard only, open:<br>
+            <code>https://checking.com/api_status.php</code>
+        </div>
     </div>
 </body>
 </html>
