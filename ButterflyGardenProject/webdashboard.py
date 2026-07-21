@@ -224,6 +224,24 @@ def read_status():
     try:
         with open(STATUS_FILE, "r") as file:
             return json.load(file)
+  
+        if "radio" not in status:
+            status["radio"] = DEFAULT_STATUS["radio"]
+
+        if "rpi" not in status:
+            status["rpi"] = DEFAULT_STATUS["rpi"]
+
+        # Fill in missing radio fields
+        for key, value in DEFAULT_STATUS["radio"].items():
+            if key not in status["radio"]:
+                status["radio"][key] = value
+
+        # Fill in missing rpi fields
+        for key, value in DEFAULT_STATUS["rpi"].items():
+            if key not in status["rpi"]:
+                status["rpi"][key] = value
+
+        return status
 
     except Exception:
         return DEFAULT_STATUS
