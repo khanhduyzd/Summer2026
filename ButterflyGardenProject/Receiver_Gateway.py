@@ -40,7 +40,7 @@ EXPECTED_INTERVAL_SECONDS = 60 * 60
 # Missing 3 messages in a row means possible problem.
 MAX_MISSED_MESSAGES = 3
 
-# We use 4 hours as the warning timeout:
+# We use 3 hours as the warning timeout:
 # 1 expected message/hour + 3 missed messages = about 3 hours.
 OFFLINE_TIMEOUT_SECONDS = EXPECTED_INTERVAL_SECONDS * MAX_MISSED_MESSAGES
 
@@ -308,22 +308,10 @@ def process_message(serial_connection, raw_message):
         upload_status = "failed"
 
   # Update dashboard files
-    update_dashboard_status(
-        node_id,
-        pedestrian_count,
-        a,
-        b,
-        c,
-        d,
-        e,
-        mode,
-        battery_voltage,
-        "sent",
-        upload_status
-    )
+    update_dashboard_status(node_id, pedestrian_count, a, b, c, d, e, mode, battery_voltage,
+        "sent", upload_status)
     
     print(f"Battery voltage recorded: {battery_voltage:.2f} V")
- 
 
 def main():
     serial_connection = serial.Serial(
