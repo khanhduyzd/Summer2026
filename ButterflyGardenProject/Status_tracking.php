@@ -36,6 +36,8 @@ Dashboard URL:
     https://checking.com/NodeCheck.php
 ------------------------------------------------------------
 */
+// Set time zone to UTC-7 / Pacific Time
+date_default_timezone_set("America/Los_Angeles");
 
 // File used to save latest node status on the server
 $status_file = "node_status_data.json";
