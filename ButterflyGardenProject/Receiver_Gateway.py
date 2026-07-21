@@ -3,6 +3,8 @@ import time
 import json
 import urllib.request
 import urllib.error
+import stmplib
+from email.message import EmailMessage
 from datetime import datetime
 
 # -----------------------------
@@ -15,6 +17,19 @@ BAUD_RATE = 9600
 # API settings
 # -----------------------------
 API_KEY = "GardenSecret2026"
+
+# -----------------------------
+# Email settings
+# -----------------------------
+EMAIL_ALERT_ENABLED = True
+
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+
+SENDER_EMAIL = "email@gmail.com"
+SENDER_PASSWORD = "app_password"
+
+RECEIVER_EMAIL = "person_to_warn@example.com"
 
 PEDESTRIAN_API_URL = "https://faridfarahmand.net/CEI/api_pedestrian.php"
 SURVEY_API_URL = "https://faridfarahmand.net/CEI/api_survey.php"
@@ -190,20 +205,60 @@ def upload_survey_counts(node_id, a, b, c, d, e):
     return post_json(SURVEY_API_URL, payload)
 
 def notify_transmitter_problem(node_id):
-    """
-    This function notifies that the transmitter may have a problem.
-    Right now, it only prints a warning.
-    Later, this can be changed to send an email, text message,
-    Slack message, or another API alert.
+ """
+    Sends an email warning that the transmitter may be experiencing an issue.
     """
 
-    timestamp = datetime.now().isoformat(timespec="seconds")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    subject = f"LoRa transmitter warning: {node_id}"
+
+    body = f"""
+Warning: Possible transmitter problem detected.
+
+Node ID: {node_id}
+Receiver ID: RPI_01
+Time: {timestamp}
+
+Reason:
+The transmitter was expected to be awake, but the Raspberry Pi has not received a valid message for too long.
+
+Recommended action:
+Please check the transmitter node, battery, antenna, LoRa connection, and Raspberry Pi receiver.
+"""
     print("\n================ WARNING ================")
     print(f"[{timestamp}] Possible transmitter problem detected.")
     print(f"Node: {node_id}")
     print("Reason: No awake message received for too long.")
     print("=========================================\n")
+    send_warning_email(subject, body)
+
+def send_warning_email(subject, body):
+    """
+    Sends a warning email when a transmitter problem is detected.
+    """
+    if not EMAIL_ALERT_ENABLED:
+        print("Email alert is disabled.")
+        return False
+
+    message = EmailMessage()
+    message["From"] = SENDER_EMAIL
+    message["To"] = RECEIVER_EMAIL
+    message["Subject"] = subject
+    message.set_content(body)
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+            server.starttls()
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.send_message(message)
+
+        print("Warning email sent.")
+        return True
+
+    except Exception as error:
+        print(f"Warning email failed: {error}")
+        return False
 
 def check_transmitter_health():
     """
