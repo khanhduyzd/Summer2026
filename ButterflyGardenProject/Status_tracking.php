@@ -1,65 +1,24 @@
 <?php
-/*
-------------------------------------------------------------
-NodeCheck.php
-------------------------------------------------------------
-
-Purpose:
-This PHP program monitors the status of a remote node and
-the Raspberry Pi receiver.
-
-The Raspberry Pi sends a status update to this PHP file using cURL.
-
-Input format:
-    https://checking.com/NodeCheck.php?status=yes
-    https://checking.com/NodeCheck.php?status=no
-
-Meaning:
-    status=yes  -> The remote node is working
-    status=no   -> The remote node is down or has a problem
-
-Important logic:
-    Because the Raspberry Pi is the device sending this update,
-    every successful update also proves that the Raspberry Pi is
-    currently working and connected to the server.
-
-Dashboard URL:
-    https://checking.com/NodeCheck.php
-
-Display:
-    Node status:
-        Green button -> node working
-        Red button   -> node down/problem
-
-    Raspberry Pi status:
-        Green button -> recent update received from RPI
-        Red button   -> no recent update received
-------------------------------------------------------------
-*/
-
-// Set time zone to Pacific Time
 date_default_timezone_set("America/Los_Angeles");
 
-// File used to save latest status on the server
 $status_file = "node_check_data.json";
+$rpi_timeout_seconds = 75 * 60; // 1 hour and 15 minutes
 
-// If no update is received for this long,
-// the Raspberry Pi will be shown as down/problem.
-$rpi_timeout_seconds = 3 * 60 * 60 + 60 * 15 ; // 3 hours and 15 minutes
-
-// Default data before the first status update
 $default_data = [
     "node" => [
         "status" => "no",
-        "reported_time" => "No status reported yet"
+        "current_status_time" => "No status reported yet",
+        "last_working_time" => "No working time yet",
+        "last_down_time" => "No down time yet"
     ],
     "rpi" => [
         "status" => "no",
-        "reported_time" => "No status reported yet"
+        "current_status_time" => "No status reported yet",
+        "last_working_time" => "No working time yet",
+        "last_down_time" => "No down time yet"
     ]
 ];
 
-// Load saved status data
 if (file_exists($status_file)) {
     $json_data = file_get_contents($status_file);
     $data = json_decode($json_data, true);
@@ -71,42 +30,109 @@ if (file_exists($status_file)) {
     $data = $default_data;
 }
 
-// Make sure both sections exist
-if (!isset($data["node"])) {
-    $data["node"] = $default_data["node"];
+foreach ($default_data as $device => $device_data) {
+    if (!isset($data[$device])) {
+        $data[$device] = $device_data;
+    }
+
+    foreach ($device_data as $key => $value) {
+        if (!isset($data[$device][$key])) {
+            $data[$device][$key] = $value;
+        }
+    }
 }
 
-if (!isset($data["rpi"])) {
-    $data["rpi"] = $default_data["rpi"];
+function save_data($status_file, $data) {
+    file_put_contents($status_file, json_encode($data, JSON_PRETTY_PRINT));
 }
 
-// Check whether a new node status was sent
+function format_duration($seconds) {
+    if ($seconds < 0) {
+        $seconds = 0;
+    }
+
+    $days = floor($seconds / 86400);
+    $seconds %= 86400;
+
+    $hours = floor($seconds / 3600);
+    $seconds %= 3600;
+
+    $minutes = floor($seconds / 60);
+
+    if ($days > 0) {
+        return $days . " day(s), " . $hours . " hour(s), " . $minutes . " minute(s)";
+    }
+
+    if ($hours > 0) {
+        return $hours . " hour(s), " . $minutes . " minute(s)";
+    }
+
+    return $minutes . " minute(s)";
+}
+
+function down_for_text($device_data) {
+    if ($device_data["status"] === "yes") {
+        return "Not down";
+    }
+
+    if ($device_data["last_down_time"] !== "No down time yet") {
+        $down_timestamp = strtotime($device_data["last_down_time"]);
+
+        if ($down_timestamp !== false) {
+            return format_duration(time() - $down_timestamp);
+        }
+    }
+
+    return "Unknown";
+}
+
+function status_text($status) {
+    if ($status === "yes") {
+        return "WORKING";
+    }
+
+    return "DOWN / PROBLEM";
+}
+
+function button_class($status) {
+    if ($status === "yes") {
+        return "green-button";
+    }
+
+    return "red-button";
+}
+
 if (isset($_GET["status"])) {
     $new_status = strtolower(trim($_GET["status"]));
 
     if ($new_status === "yes" || $new_status === "no") {
         $current_time = date("Y-m-d H:i:s");
 
-        // Update node status from the input
-        $data["node"]["status"] = $new_status;
-        $data["node"]["reported_time"] = $current_time;
+        if ($new_status === "yes") {
+            $data["node"]["status"] = "yes";
+            $data["node"]["current_status_time"] = $current_time;
+            $data["node"]["last_working_time"] = $current_time;
+        }
 
-        // Since the Raspberry Pi successfully contacted this PHP file,
-        // the Raspberry Pi is currently working.
+        if ($new_status === "no") {
+            if ($data["node"]["status"] !== "no") {
+                $data["node"]["last_down_time"] = $current_time;
+            }
+
+            $data["node"]["status"] = "no";
+            $data["node"]["current_status_time"] = $current_time;
+        }
+
         $data["rpi"]["status"] = "yes";
-        $data["rpi"]["reported_time"] = $current_time;
+        $data["rpi"]["current_status_time"] = $current_time;
+        $data["rpi"]["last_working_time"] = $current_time;
 
-        file_put_contents(
-            $status_file,
-            json_encode($data, JSON_PRETTY_PRINT)
-        );
+        save_data($status_file, $data);
 
         header("Content-Type: text/plain");
         echo "Status updated successfully.\n";
         echo "Node status: " . $data["node"]["status"] . "\n";
-        echo "Node reported time: " . $data["node"]["reported_time"] . "\n";
         echo "RPI status: " . $data["rpi"]["status"] . "\n";
-        echo "RPI reported time: " . $data["rpi"]["reported_time"] . "\n";
         exit;
     } else {
         header("Content-Type: text/plain");
@@ -116,54 +142,46 @@ if (isset($_GET["status"])) {
     }
 }
 
-// Check if Raspberry Pi status is too old
-if ($data["rpi"]["reported_time"] !== "No status reported yet") {
-    $last_rpi_time = strtotime($data["rpi"]["reported_time"]);
-    $current_server_time = time();
+if ($data["rpi"]["current_status_time"] !== "No status reported yet") {
+    $last_rpi_update = strtotime($data["rpi"]["current_status_time"]);
 
-    if (($current_server_time - $last_rpi_time) > $rpi_timeout_seconds) {
-        $data["rpi"]["status"] = "no";
+    if ($last_rpi_update !== false) {
+        $elapsed = time() - $last_rpi_update;
+
+        if ($elapsed > $rpi_timeout_seconds) {
+            if ($data["rpi"]["status"] !== "no") {
+                $data["rpi"]["last_down_time"] = date("Y-m-d H:i:s");
+            }
+
+            $data["rpi"]["status"] = "no";
+        }
     }
 }
 
-// Helper function for button color
-function button_class($status) {
-    if ($status === "yes") {
-        return "green-button";
-    } else {
-        return "red-button";
-    }
-}
+save_data($status_file, $data);
 
-// Helper function for status text
-function status_text($status) {
-    if ($status === "yes") {
-        return "WORKING";
-    } else {
-        return "DOWN / PROBLEM";
-    }
-}
+$node_down_for = down_for_text($data["node"]);
+$rpi_down_for = down_for_text($data["rpi"]);
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Node and Raspberry Pi Status Dashboard</title>
-
+    <title>Status Dashboard</title>
     <meta http-equiv="refresh" content="10">
 
     <style>
         body {
             font-family: Arial, sans-serif;
             background-color: #f2f2f2;
-            margin: 30px;
+            margin: 25px;
         }
 
         .container {
-            max-width: 850px;
+            max-width: 1300px;
             margin: auto;
             background-color: white;
-            padding: 30px;
+            padding: 25px;
             border-radius: 12px;
             box-shadow: 0 0 10px #cccccc;
             text-align: center;
@@ -171,34 +189,35 @@ function status_text($status) {
 
         h1 {
             color: #222222;
-        }
-
-        .description {
-            text-align: left;
-            background-color: #f8f8f8;
-            padding: 15px;
-            border-left: 5px solid #555555;
             margin-bottom: 25px;
-            line-height: 1.5;
         }
 
-        .device-box {
+        .dashboard-row {
+            display: flex;
+            gap: 20px;
+            align-items: stretch;
+            justify-content: center;
+        }
+
+        .card {
+            flex: 1;
             background-color: #fafafa;
             border: 1px solid #dddddd;
             border-radius: 10px;
-            padding: 25px;
-            margin: 20px 0;
+            padding: 22px;
+            text-align: center;
         }
 
         .status-button {
             border: none;
             color: white;
-            padding: 22px 45px;
-            font-size: 22px;
+            padding: 20px 35px;
+            font-size: 21px;
             font-weight: bold;
             border-radius: 12px;
             cursor: default;
             margin: 15px 0;
+            width: 90%;
         }
 
         .green-button {
@@ -209,68 +228,85 @@ function status_text($status) {
             background-color: red;
         }
 
-        .time-box {
-            margin-top: 15px;
-            font-size: 17px;
+        .info-box {
+            font-size: 16px;
             color: #333333;
-            padding: 12px;
+            padding: 15px;
             background-color: #eeeeee;
             border-radius: 8px;
-        }
-
-        .usage {
             text-align: left;
-            margin-top: 30px;
-            background-color: #fff8dc;
-            padding: 15px;
-            border-left: 5px solid #e0b000;
-            line-height: 1.5;
+            line-height: 1.6;
+            margin-top: 15px;
         }
 
-        code {
-            background-color: #eeeeee;
-            padding: 3px 6px;
-            border-radius: 4px;
+        .label {
+            font-weight: bold;
+        }
+
+        @media (max-width: 900px) {
+            .dashboard-row {
+                flex-direction: column;
+            }
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h1>Node and Raspberry Pi Status Dashboard</h1>
+        <h1>Status Dashboard</h1>
 
-        <div class="device-box">
-            <h2>Remote Node Status</h2>
+        <div class="dashboard-row">
 
-            <button class="status-button <?php echo button_class($data["node"]["status"]); ?>">
-                NODE <?php echo status_text($data["node"]["status"]); ?>
-            </button>
+            <div class="card">
+                <h2>Transmitter Remote Node</h2>
 
-            <div class="time-box">
-                <strong>Latest node status:</strong>
-                <?php echo htmlspecialchars($data["node"]["status"]); ?>
-                <br><br>
+                <button class="status-button <?php echo button_class($data["node"]["status"]); ?>">
+                    NODE <?php echo status_text($data["node"]["status"]); ?>
+                </button>
 
-                <strong>Node status reported time:</strong><br>
-                <?php echo htmlspecialchars($data["node"]["reported_time"]); ?>
+                <div class="info-box">
+                    <span class="label">Current status:</span><br>
+                    <?php echo htmlspecialchars(status_text($data["node"]["status"])); ?>
+                    <br><br>
+
+                    <span class="label">Current status time:</span><br>
+                    <?php echo htmlspecialchars($data["node"]["current_status_time"]); ?>
+                    <br><br>
+
+                    <span class="label">Last working time:</span><br>
+                    <?php echo htmlspecialchars($data["node"]["last_working_time"]); ?>
+                    <br><br>
+
+                    <span class="label">Down for:</span><br>
+                    <?php echo htmlspecialchars($node_down_for); ?>
+                </div>
             </div>
-        </div>
 
-        <div class="device-box">
-            <h2>Raspberry Pi Status</h2>
+            <div class="card">
+                <h2>Raspberry Pi</h2>
 
-            <button class="status-button <?php echo button_class($data["rpi"]["status"]); ?>">
-                RPI <?php echo status_text($data["rpi"]["status"]); ?>
-            </button>
+                <button class="status-button <?php echo button_class($data["rpi"]["status"]); ?>">
+                    RPI <?php echo status_text($data["rpi"]["status"]); ?>
+                </button>
 
-            <div class="time-box">
-                <strong>Latest RPI status:</strong>
-                <?php echo htmlspecialchars($data["rpi"]["status"]); ?>
-                <br><br>
+                <div class="info-box">
+                    <span class="label">Current status:</span><br>
+                    <?php echo htmlspecialchars(status_text($data["rpi"]["status"])); ?>
+                    <br><br>
 
-                <strong>Last update received from RPI:</strong><br>
-                <?php echo htmlspecialchars($data["rpi"]["reported_time"]); ?>
+                    <span class="label">Last update received:</span><br>
+                    <?php echo htmlspecialchars($data["rpi"]["current_status_time"]); ?>
+                    <br><br>
+
+                    <span class="label">Last working time:</span><br>
+                    <?php echo htmlspecialchars($data["rpi"]["last_working_time"]); ?>
+                    <br><br>
+
+                    <span class="label">Down for:</span><br>
+                    <?php echo htmlspecialchars($rpi_down_for); ?>
+                </div>
             </div>
+
         </div>
     </div>
 </body>
