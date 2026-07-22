@@ -33,6 +33,7 @@ RECEIVER_EMAIL = "person_to_warn@example.com"
 
 PEDESTRIAN_API_URL = "https://faridfarahmand.net/CEI/api_pedestrian.php"
 SURVEY_API_URL = "https://faridfarahmand.net/CEI/api_survey.php"
+STATUS_CHECK_URL = "https://faridfarahmand.net/CEI/NodeCheck.php"
 
 # -----------------------------
 # Dashboard files
