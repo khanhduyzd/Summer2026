@@ -239,15 +239,6 @@ function status_text($status) {
     <div class="container">
         <h1>Node and Raspberry Pi Status Dashboard</h1>
 
-        <div class="description">
-            <strong>What this program does:</strong><br>
-            This PHP dashboard monitors both the remote node and the Raspberry Pi.
-            The Raspberry Pi sends the node status to this PHP page. Because the
-            Raspberry Pi is the sender, each successful update also confirms that
-            the Raspberry Pi is currently working. If no update is received for too
-            long, the Raspberry Pi status automatically changes to down/problem.
-        </div>
-
         <div class="device-box">
             <h2>Remote Node Status</h2>
 
@@ -280,26 +271,6 @@ function status_text($status) {
                 <strong>Last update received from RPI:</strong><br>
                 <?php echo htmlspecialchars($data["rpi"]["reported_time"]); ?>
             </div>
-        </div>
-
-        <div class="usage">
-            <strong>How to use this program:</strong><br><br>
-
-            To report that the node is working, run:<br>
-            <code>curl "https://checking.com/NodeCheck.php?status=yes"</code>
-            <br><br>
-
-            To report that the node is down, run:<br>
-            <code>curl "https://checking.com/NodeCheck.php?status=no"</code>
-            <br><br>
-
-            To view the dashboard, open:<br>
-            <code>https://checking.com/NodeCheck.php</code>
-            <br><br>
-
-            Raspberry Pi status is updated automatically whenever the Raspberry Pi
-            sends a node status update. If no update is received for more than
-            2 hours, the RPI button turns red.
         </div>
     </div>
 </body>
