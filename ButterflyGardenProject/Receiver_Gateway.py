@@ -3,7 +3,7 @@ import time
 import json
 import urllib.request
 import urllib.error
-import stmplib
+import smtplib
 from email.message import EmailMessage
 from datetime import datetime
 
