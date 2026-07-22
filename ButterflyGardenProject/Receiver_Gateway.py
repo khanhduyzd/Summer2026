@@ -95,6 +95,7 @@ def parse_combined_message(raw_message):
     """
     raw_message = raw_message.strip()
     raw_message = raw_message.replace("\x00", "")
+    raw_message = "".join(ch for ch in raw_message if ch.isprintable())
 
     # Remove optional Meshtastic prefix.
     if ":" in raw_message:
@@ -296,7 +297,8 @@ def process_message(serial_connection, raw_message):
         node_id, pedestrian_count, a, b, c, d, e, mode, battery_code = parse_combined_message(raw_message)
         battery_voltage = (1.024*4095)/battery_code
     except ValueError:
-        # Wrong format, so do nothing and do not send ACK
+    print(f"Invalid message ignored: {error}")
+    print(f"Bad message was: {repr(raw_message)}")
         return
 
     # Send ACK only after the message format is valid
