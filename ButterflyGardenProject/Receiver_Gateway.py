@@ -41,18 +41,9 @@ STATUS_CHECK_URL = "https://faridfarahmand.net/CEI/NodeCheck.php"
 # -----------------------------
 ACK_PASSWORD = "LED"
 
-# -----------------------------
-# Transmitter health monitoring
-# -----------------------------
-# Transmitter should send one message every hour while awake.
-EXPECTED_INTERVAL_SECONDS = 60 * 60
-
-# Missing 3 messages in a row means possible problem.
-MAX_MISSED_MESSAGES = 3
-
 # We use 3 hours as the warning timeout:
 # 1 expected message/hour + 3 missed messages = about 3 hours.
-OFFLINE_TIMEOUT_SECONDS = EXPECTED_INTERVAL_SECONDS * MAX_MISSED_MESSAGES
+OFFLINE_TIMEOUT_SECONDS = 60*60
 
 last_awake_message_time = None
 transmitter_awake = False
@@ -78,10 +69,8 @@ def update_php_node_status(status):
 
     try:
         with urllib.request.urlopen(url, timeout=10) as response:
-            response_body = response.read().decode("utf-8", errors="replace")
+            response.read()
 
-        print(f"PHP status update sent: status={status}")
-        print(response_body)
         return True
 
     except Exception as error:
@@ -110,6 +99,9 @@ def parse_combined_message(raw_message):
 
     if not node_id:
         raise ValueError("node_id is empty")
+    if node_id.lower() != "gate_01":
+        raise ValueError(f"Unexpected node_id: {node_id}")
+            
     try:
         pedestrian_count = int(parts[1])
         a = int(parts[2])
@@ -125,6 +117,8 @@ def parse_combined_message(raw_message):
         
     if mode not in [0, 1]:
         raise ValueError("mode must be 0 for sleep or 1 for awake")
+    if battery_code <= 0:
+        raise ValueError("battery_code must be greater than 0")
         
     return node_id, pedestrian_count, a, b, c, d, e, mode, battery_code
 
@@ -135,7 +129,6 @@ def send_acknowledgement(serial_connection):
     
 def post_json(api_url, payload):
     #Sends JSON data to one API endpoint.
-
     json_data = json.dumps(payload).encode("utf-8")
 
     request = urllib.request.Request(
@@ -366,9 +359,9 @@ def main():
                     line, buffer = buffer.split("\n", 1)
                     process_message(serial_connection, line)
 
-            # If message arrives without newline, process after 1 second
+            # If message arrives without newline, process after 3 second
             if buffer.strip() and last_data_time is not None:
-                if time.time() - last_data_time > 1.0:
+                if time.time() - last_data_time > 3.0:
                     process_message(serial_connection, buffer)
                     buffer = ""
                     last_data_time = None
