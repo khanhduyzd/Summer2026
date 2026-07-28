@@ -2,7 +2,7 @@
 date_default_timezone_set("America/Los_Angeles");
 
 $status_file = "node_check_data.json";
-$rpi_timeout_seconds = 75 * 60; // 1 hour and 15 minutes
+$rpi_timeout_seconds = 3 * 60;
 
 $default_data = [
     "node" => [
