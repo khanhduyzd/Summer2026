@@ -53,13 +53,14 @@ last_status_update_time = 0
 node_is_down = False
 problem_notified = False
 last_node_id = "Gate_01"
+node_is_sleeping = False
 
 def update_php_node_status(status):
     """
     status=yes: Node sent a correct awake message.
     status=no: Node sent a wrong message, sleep, or no valid message arrived in time.
     """
-    if status not in ["yes", "no"]:
+    if status not in ["yes", "no", "sleep"]:
         print(f"Invalid PHP status value: {status}")
         return False
     url = f"{STATUS_CHECK_URL}?status={status}"
@@ -214,6 +215,11 @@ def check_node_timeout_and_update_php():
     current_time = time.time()
     time_since_valid_message = current_time - last_valid_message_time
     time_since_last_status_update = current_time - last_status_update_time
+    if node_is_sleeping:
+        if time_since_last_status_update >= STATUS_UPDATE_INTERVAL_SECONDS:
+            update_php_node_status("sleep")
+            last_status_update_time = current_time
+        return
     if time_since_valid_message >= NODE_TIMEOUT_SECONDS:
         if not node_is_down:
             update_php_node_status("no")
@@ -259,6 +265,7 @@ def process_message(serial_connection, raw_message):
         update_php_node_status("no")
         last_status_update_time = time.time()
         node_is_down = True
+        node_is_sleeping = False 
         return
 
     # Message format is valid, so send ACK.
@@ -270,13 +277,15 @@ def process_message(serial_connection, raw_message):
 
     # mode = 0 means sleep.
     if mode == 0:
-        node_is_down = True
-        update_php_node_status("no")
+        node_is_down = False
+        node_is_sleeping = True
+        update_php_node_status("sleep")
         print("Transmitter status: SLEEP")
         return
 
     # mode = 1 means awake.
     node_is_down = False
+    node_is_sleeping = False
     problem_notified = False
 
     update_php_node_status("yes")
