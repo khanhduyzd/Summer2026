@@ -253,6 +253,7 @@ def process_message(serial_connection, raw_message):
     global node_is_down
     global problem_notified
     global last_node_id
+    global node_is_sleeping
     raw_message = raw_message.strip()
     if not raw_message:
         return
