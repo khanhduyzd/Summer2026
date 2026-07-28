@@ -41,9 +41,10 @@ RECEIVER_EMAIL = "person_to_warn@example.com"
 ACK_PASSWORD = "LED"
 
 # -----------------------------
-# New node status logic
+# Node status logic
 # -----------------------------
 NODE_TIMEOUT_SECONDS = 60 * 60
+MAX_SLEEP_SECONDS = 12 * 60 * 60
 
 # If node is still down, send status=no again every 1 hour
 STATUS_UPDATE_INTERVAL_SECONDS = 60 * 60
@@ -54,6 +55,7 @@ node_is_down = False
 problem_notified = False
 last_node_id = "Gate_01"
 node_is_sleeping = False
+last_sleep_message_time = None
 
 def update_php_node_status(status):
     """
@@ -208,26 +210,47 @@ def check_node_timeout_and_update_php():
     If no valid message has been received within NODE_TIMEOUT_SECONDS,  send status=no to PHP.
     If the node is still down, send status=no again every STATUS_UPDATE_INTERVAL_SECONDS.
     """
-
     global node_is_down
+    global node_is_sleeping
     global last_status_update_time
     global problem_notified
+
     current_time = time.time()
+
     time_since_valid_message = current_time - last_valid_message_time
     time_since_last_status_update = current_time - last_status_update_time
+
     if node_is_sleeping:
+        time_since_sleep_started = current_time - last_sleep_message_time
+
+        if time_since_sleep_started >= MAX_SLEEP_SECONDS:
+            update_php_node_status("no")
+            last_status_update_time = current_time
+            node_is_down = True
+            node_is_sleeping = False
+
+            if not problem_notified:
+                send_timeout_warning_email(last_node_id)
+                problem_notified = True
+
+            return
+
         if time_since_last_status_update >= STATUS_UPDATE_INTERVAL_SECONDS:
             update_php_node_status("sleep")
             last_status_update_time = current_time
+
         return
+
     if time_since_valid_message >= NODE_TIMEOUT_SECONDS:
         if not node_is_down:
             update_php_node_status("no")
             last_status_update_time = current_time
             node_is_down = True
+
             if not problem_notified:
                 send_timeout_warning_email(last_node_id)
                 problem_notified = True
+
         elif time_since_last_status_update >= STATUS_UPDATE_INTERVAL_SECONDS:
             update_php_node_status("no")
             last_status_update_time = current_time
@@ -254,6 +277,7 @@ def process_message(serial_connection, raw_message):
     global problem_notified
     global last_node_id
     global node_is_sleeping
+    global last_sleep_message_time
     raw_message = raw_message.strip()
     if not raw_message:
         return
@@ -280,6 +304,8 @@ def process_message(serial_connection, raw_message):
     if mode == 0:
         node_is_down = False
         node_is_sleeping = True
+        problem_notified = False
+        last_sleep_message_time = current_time
         update_php_node_status("sleep")
         print("Transmitter status: SLEEP")
         return
