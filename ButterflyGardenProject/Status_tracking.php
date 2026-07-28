@@ -2,13 +2,18 @@
 date_default_timezone_set("America/Los_Angeles");
 
 $status_file = "node_check_data.json";
+
+// Testing: 3 minutes.
+// Final version for 1-hour Python updates: use 75 * 60.
 $rpi_timeout_seconds = 3 * 60;
+// $rpi_timeout_seconds = 75 * 60;
 
 $default_data = [
     "node" => [
         "status" => "no",
         "current_status_time" => "No status reported yet",
         "last_working_time" => "No working time yet",
+        "last_sleeping_time" => "No sleeping time yet",
         "last_down_time" => "No down time yet"
     ],
     "rpi" => [
@@ -71,7 +76,7 @@ function format_duration($seconds) {
 }
 
 function down_for_text($device_data) {
-    if ($device_data["status"] === "yes") {
+    if ($device_data["status"] === "yes" || $device_data["status"] === "sleep") {
         return "Not down";
     }
 
@@ -91,6 +96,10 @@ function status_text($status) {
         return "WORKING";
     }
 
+    if ($status === "sleep") {
+        return "SLEEPING";
+    }
+
     return "DOWN / PROBLEM";
 }
 
@@ -99,19 +108,29 @@ function button_class($status) {
         return "green-button";
     }
 
+    if ($status === "sleep") {
+        return "yellow-button";
+    }
+
     return "red-button";
 }
 
 if (isset($_GET["status"])) {
     $new_status = strtolower(trim($_GET["status"]));
 
-    if ($new_status === "yes" || $new_status === "no") {
+    if ($new_status === "yes" || $new_status === "no" || $new_status === "sleep") {
         $current_time = date("Y-m-d H:i:s");
 
         if ($new_status === "yes") {
             $data["node"]["status"] = "yes";
             $data["node"]["current_status_time"] = $current_time;
             $data["node"]["last_working_time"] = $current_time;
+        }
+
+        if ($new_status === "sleep") {
+            $data["node"]["status"] = "sleep";
+            $data["node"]["current_status_time"] = $current_time;
+            $data["node"]["last_sleeping_time"] = $current_time;
         }
 
         if ($new_status === "no") {
@@ -123,6 +142,7 @@ if (isset($_GET["status"])) {
             $data["node"]["current_status_time"] = $current_time;
         }
 
+        // Any request from Python means the RPI is alive.
         $data["rpi"]["status"] = "yes";
         $data["rpi"]["current_status_time"] = $current_time;
         $data["rpi"]["last_working_time"] = $current_time;
@@ -137,7 +157,7 @@ if (isset($_GET["status"])) {
     } else {
         header("Content-Type: text/plain");
         echo "Invalid status value.\n";
-        echo "Use status=yes or status=no.\n";
+        echo "Use status=yes, status=no, or status=sleep.\n";
         exit;
     }
 }
@@ -224,6 +244,11 @@ $rpi_down_for = down_for_text($data["rpi"]);
             background-color: green;
         }
 
+        .yellow-button {
+            background-color: #f4c542;
+            color: black;
+        }
+
         .red-button {
             background-color: red;
         }
@@ -277,6 +302,14 @@ $rpi_down_for = down_for_text($data["rpi"]);
                     <?php echo htmlspecialchars($data["node"]["last_working_time"]); ?>
                     <br><br>
 
+                    <span class="label">Last sleeping time:</span><br>
+                    <?php echo htmlspecialchars($data["node"]["last_sleeping_time"]); ?>
+                    <br><br>
+
+                    <span class="label">Last down time:</span><br>
+                    <?php echo htmlspecialchars($data["node"]["last_down_time"]); ?>
+                    <br><br>
+
                     <span class="label">Down for:</span><br>
                     <?php echo htmlspecialchars($node_down_for); ?>
                 </div>
@@ -300,6 +333,10 @@ $rpi_down_for = down_for_text($data["rpi"]);
 
                     <span class="label">Last working time:</span><br>
                     <?php echo htmlspecialchars($data["rpi"]["last_working_time"]); ?>
+                    <br><br>
+
+                    <span class="label">Last down time:</span><br>
+                    <?php echo htmlspecialchars($data["rpi"]["last_down_time"]); ?>
                     <br><br>
 
                     <span class="label">Down for:</span><br>
