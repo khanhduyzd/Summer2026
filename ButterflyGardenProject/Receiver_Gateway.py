@@ -327,16 +327,15 @@ def process_message(serial_connection, raw_message):
     """
     Handles one received radio message.
 
-    New logic:
-        Correct message:
-            - Send ACK
-            - Send status=yes to PHP
-            - Upload to database
+    Correct message:
+        - send ACK
+        - send status=yes to PHP
+        - upload to database
 
-        Wrong message:
-            - Send status=no to PHP
-            - Do not send ACK
-            - Do not upload to database
+    Wrong message:
+        - send status=no to PHP
+        - do not send ACK
+        - do not upload to database
     """
 
     global last_valid_message_time
@@ -351,22 +350,22 @@ def process_message(serial_connection, raw_message):
 
     try:
         node_id, pedestrian_count, a, b, c, d, e, mode, battery_code = parse_combined_message(raw_message)
-
-        # battery_code is checked for validity, but not used right now.
         _ = battery_code
 
     except ValueError as error:
         print(f"Invalid message ignored: {error}")
         print(f"Bad message was: {repr(raw_message)}")
 
-        # Wrong message means node/problem status should be shown.
+        # Wrong message means node status should be no.
         update_php_node_status("no")
+        print("PHP status=no sent because message was invalid.")
+
         last_status_update_time = time.time()
         node_is_down = True
 
         return
 
-    # Valid message received
+    # Valid message received.
     send_acknowledgement(serial_connection)
 
     current_time = time.time()
@@ -375,10 +374,9 @@ def process_message(serial_connection, raw_message):
     node_is_down = False
     last_node_id = node_id
 
-    # Valid message means node is working.
     update_php_node_status("yes")
+    print("Valid message received. PHP status=yes sent.")
 
-    # Upload pedestrian count
     ped_success, ped_status, ped_response = upload_pedestrian_count(
         node_id,
         pedestrian_count
@@ -389,7 +387,6 @@ def process_message(serial_connection, raw_message):
         print(f"HTTP status: {ped_status}")
         print(f"Server response/error: {ped_response}")
 
-    # Upload survey counts
     survey_success, survey_status, survey_response = upload_survey_counts(
         node_id,
         a,
