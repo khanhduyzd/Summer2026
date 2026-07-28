@@ -326,16 +326,20 @@ def check_node_timeout_and_update_php():
 def process_message(serial_connection, raw_message):
     """
     Handles one received radio message.
+    Correct awake message, mode = 1:
+        - Send ACK
+        - Send status=yes to PHP
+        - Upload to database
 
-    Correct message:
-        - send ACK
-        - send status=yes to PHP
-        - upload to database
+    Sleep message, mode = 0:
+        - Send ACK
+        - Send status=no to PHP
+        - Do not upload to database
 
-    Wrong message:
-        - send status=no to PHP
-        - do not send ACK
-        - do not upload to database
+    Wrong/invalid message:
+        - Send status=no to PHP
+        - Do not send ACK
+        - Do not upload to database
     """
 
     global last_valid_message_time
@@ -356,7 +360,7 @@ def process_message(serial_connection, raw_message):
         print(f"Invalid message ignored: {error}")
         print(f"Bad message was: {repr(raw_message)}")
 
-        # Wrong message means node status should be no.
+        # Invalid message means node status should be no.
         update_php_node_status("no")
         print("PHP status=no sent because message was invalid.")
 
@@ -365,18 +369,30 @@ def process_message(serial_connection, raw_message):
 
         return
 
-    # Valid message received.
+    # Message format is valid, so send ACK.
     send_acknowledgement(serial_connection)
 
     current_time = time.time()
     last_valid_message_time = current_time
     last_status_update_time = current_time
-    node_is_down = False
     last_node_id = node_id
 
-    update_php_node_status("yes")
-    print("Valid message received. PHP status=yes sent.")
+    # mode = 0 means the node says it is sleeping.
+    # For your current dashboard logic, sleep should show as no.
+    if mode == 0:
+        node_is_down = True
+        update_php_node_status("no")
+        print("Node reported sleep mode. PHP status=no sent.")
 
+        # Do not upload sleep message to database.
+        return
+
+    # mode = 1 means node is awake and working.
+    node_is_down = False
+    update_php_node_status("yes")
+    print("Valid awake message received. PHP status=yes sent.")
+
+    # Upload pedestrian count.
     ped_success, ped_status, ped_response = upload_pedestrian_count(
         node_id,
         pedestrian_count
@@ -387,6 +403,7 @@ def process_message(serial_connection, raw_message):
         print(f"HTTP status: {ped_status}")
         print(f"Server response/error: {ped_response}")
 
+    # Upload survey counts.
     survey_success, survey_status, survey_response = upload_survey_counts(
         node_id,
         a,
@@ -400,7 +417,6 @@ def process_message(serial_connection, raw_message):
         print("Survey upload failed.")
         print(f"HTTP status: {survey_status}")
         print(f"Server response/error: {survey_response}")
-
 
 def main():
     serial_connection = serial.Serial(
