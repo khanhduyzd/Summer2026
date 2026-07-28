@@ -18,6 +18,10 @@ BAUD_RATE = 9600
 # -----------------------------
 API_KEY = "GardenSecret2026"
 
+PEDESTRIAN_API_URL = "https://faridfarahmand.net/CEI/api_pedestrian.php"
+SURVEY_API_URL = "https://faridfarahmand.net/CEI/api_survey.php"
+STATUS_CHECK_URL = "https://faridfarahmand.net/CEI/NodeCheck.php"
+
 # -----------------------------
 # Email settings
 # -----------------------------
@@ -31,34 +35,43 @@ SENDER_PASSWORD = "app_password"
 
 RECEIVER_EMAIL = "person_to_warn@example.com"
 
-PEDESTRIAN_API_URL = "https://faridfarahmand.net/CEI/api_pedestrian.php"
-SURVEY_API_URL = "https://faridfarahmand.net/CEI/api_survey.php"
-STATUS_CHECK_URL = "https://faridfarahmand.net/CEI/NodeCheck.php"
-
 # -----------------------------
 # Acknowledgement password
-# This is sent back after a valid message is received
 # -----------------------------
 ACK_PASSWORD = "LED"
 
-# We use 3 hours as the warning timeout:
-# 1 expected message/hour + 3 missed messages = about 3 hours.
-OFFLINE_TIMEOUT_SECONDS = 60*60
+# -----------------------------
+# New node status logic
+# -----------------------------
+# Final version: 1 hour
+NODE_TIMEOUT_SECONDS = 60 * 60
 
-last_awake_message_time = None
-transmitter_awake = False
-problem_notified = False
+# Send status=no again every 1 hour if the node is still down
+STATUS_UPDATE_INTERVAL_SECONDS = 60 * 60
+
+# For testing only, you can temporarily use:
+# NODE_TIMEOUT_SECONDS = 60
+# STATUS_UPDATE_INTERVAL_SECONDS = 60
+
+last_valid_message_time = time.time()
+last_status_update_time = 0
+node_is_down = False
 last_node_id = None
-        
+
+
 def update_php_node_status(status):
     """
-    Updates the external PHP status dashboard.
+    Sends node status to PHP.
 
-    status = "yes" means the node is working.
-    status = "no" means the node is down/problem.
+    status=yes means:
+        Valid node message was received.
+        Node is working.
+        RPI is also working because RPI sent this request.
 
-    Since the Raspberry Pi sends this request,
-    the PHP page also knows the Raspberry Pi is working.
+    status=no means:
+        Wrong message was received, or no valid message was received in time.
+        Node is down/problem.
+        RPI is also working because RPI sent this request.
     """
 
     if status not in ["yes", "no"]:
@@ -77,31 +90,41 @@ def update_php_node_status(status):
         print(f"PHP status update failed: {error}")
         return False
 
+
 def parse_combined_message(raw_message):
     """
     Expected message format:
-        Gate_01, 09, A, B, C, D, E, mode, battery_code
+        Gate_01, pedestrian_count, A, B, C, D, E, mode, battery_code
+
+    Example:
+        Gate_01,0,0,0,0,0,0,1,1000
     """
+
     raw_message = raw_message.strip()
     raw_message = raw_message.replace("\x00", "")
     raw_message = "".join(ch for ch in raw_message if ch.isprintable())
 
     # Remove optional Meshtastic prefix.
+    # Example:
+    # 8798: Gate_01,0,0,0,0,0,0,1,1000
     if ":" in raw_message:
         raw_message = raw_message.split(":", 1)[1].strip()
 
     parts = [part.strip() for part in raw_message.split(",")]
 
     if len(parts) != 9:
-        raise ValueError("Message must have 9 fields: node_id, pedestrian_count, a, b, c, d, e, mode, battery_code"  )
+        raise ValueError(
+            "Message must have 9 fields: node_id, pedestrian_count, a, b, c, d, e, mode, battery_code"
+        )
 
     node_id = parts[0]
 
     if not node_id:
         raise ValueError("node_id is empty")
+
     if node_id.lower() != "gate_01":
         raise ValueError(f"Unexpected node_id: {node_id}")
-            
+
     try:
         pedestrian_count = int(parts[1])
         a = int(parts[2])
@@ -111,24 +134,35 @@ def parse_combined_message(raw_message):
         e = int(parts[6])
         mode = int(parts[7])
         battery_code = int(parts[8])
-        
+
     except ValueError:
-        raise ValueError("pedestrian_count, survey values, mode, and battery_code must be integers")
-        
+        raise ValueError(
+            "pedestrian_count, survey values, mode, and battery_code must be integers"
+        )
+
     if mode not in [0, 1]:
         raise ValueError("mode must be 0 for sleep or 1 for awake")
+
     if battery_code <= 0:
         raise ValueError("battery_code must be greater than 0")
-        
+
     return node_id, pedestrian_count, a, b, c, d, e, mode, battery_code
 
+
 def send_acknowledgement(serial_connection):
-    #Sends the secret ACK password back to the transmitter.
+    """
+    Sends the secret ACK password back to the transmitter.
+    """
+
     serial_connection.write((ACK_PASSWORD + "\n").encode("utf-8"))
     serial_connection.flush()
-    
+
+
 def post_json(api_url, payload):
-    #Sends JSON data to one API endpoint.
+    """
+    Sends JSON data to one API endpoint.
+    """
+
     json_data = json.dumps(payload).encode("utf-8")
 
     request = urllib.request.Request(
@@ -148,8 +182,8 @@ def post_json(api_url, payload):
 
             if 200 <= status_code < 300:
                 return True, status_code, response_body
-            else:
-               return False, status_code, response_body
+
+            return False, status_code, response_body
 
     except urllib.error.HTTPError as error:
         response_body = error.read().decode("utf-8", errors="replace")
@@ -158,26 +192,37 @@ def post_json(api_url, payload):
     except urllib.error.URLError as error:
         return False, None, str(error)
 
+
 def upload_pedestrian_count(node_id, pedestrian_count):
-    """ Uploads pedestrian count. JSON format:
-            "node_id": "Gate_01",
-            "count": 9
     """
+    Uploads pedestrian count.
+    """
+
     payload = {
         "node_id": node_id,
         "count": pedestrian_count
     }
+
     return post_json(PEDESTRIAN_API_URL, payload)
 
 
 def upload_survey_counts(node_id, a, b, c, d, e):
-    """ Uploads survey option counts. JSON format:
-            "node_id": "Gate_01",
-            "a": 1,  "b": 2,   "c": 3,  "d": 4, "e": 5
     """
-    payload = {"node_id": node_id,  "a": a,   "b": b, "c": c, "d": d,  "e": e }
+    Uploads survey option counts.
+    """
+
+    payload = {
+        "node_id": node_id,
+        "a": a,
+        "b": b,
+        "c": c,
+        "d": d,
+        "e": e
+    }
+
     return post_json(SURVEY_API_URL, payload)
-        
+
+
 def send_warning_email(subject, body):
     """
     Sends a warning email when a transmitter problem is detected.
@@ -203,15 +248,19 @@ def send_warning_email(subject, body):
     except Exception as error:
         print(f"Warning email failed: {error}")
         return False
-            
+
+
 def notify_transmitter_problem(node_id):
     """
-    Runs when the transmitter/node may have a problem.
+    Runs when no valid message has been received for too long.
 
     This function:
-    1. Updates the PHP dashboard with status=no
-    2. Sends a warning email
+        1. Sends status=no to PHP
+        2. Sends warning email
     """
+
+    global node_is_down
+    global last_status_update_time
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -225,114 +274,136 @@ Receiver ID: RPI_01
 Time: {timestamp}
 
 Reason:
-The transmitter was expected to be awake, but the Raspberry Pi has not received a valid message for too long.
+The Raspberry Pi has not received a valid message from the transmitter within the expected time.
 
 Recommended action:
 Please check the transmitter node, battery, antenna, LoRa connection, and Raspberry Pi receiver.
 """
-    # Node is down/problem.
-    # Since the RPI sends this request, PHP knows the RPI is still working.
-    update_php_node_status("no")
 
-    # Send email warning.
+    update_php_node_status("no")
+    last_status_update_time = time.time()
+    node_is_down = True
+
     send_warning_email(subject, body)
 
-def check_transmitter_health():
+
+def check_node_timeout_and_update_php():
     """
-    Checks if the transmitter has missed too many expected messages.
-    If transmitter is sleeping, this function does nothing.
-    If transmitter is awake and no message is received for too long,
-    it prints a warning.
+    New logic:
+
+    If no valid message has been received within NODE_TIMEOUT_SECONDS,
+    send status=no to PHP.
+
+    If the node is still down, send status=no again every
+    STATUS_UPDATE_INTERVAL_SECONDS.
     """
 
-    global last_awake_message_time
-    global transmitter_awake
-    global problem_notified
-    global last_node_id
+    global node_is_down
+    global last_status_update_time
 
-    if not transmitter_awake:
-        return
+    current_time = time.time()
+    time_since_valid_message = current_time - last_valid_message_time
+    time_since_last_status_update = current_time - last_status_update_time
 
-    if last_awake_message_time is None:
-        return
+    if time_since_valid_message >= NODE_TIMEOUT_SECONDS:
 
-    elapsed_time = time.time() - last_awake_message_time
+        # First time detecting the node is down
+        if not node_is_down:
+            if last_node_id is None:
+                update_php_node_status("no")
+                last_status_update_time = current_time
+                node_is_down = True
+            else:
+                notify_transmitter_problem(last_node_id)
 
-    if elapsed_time > OFFLINE_TIMEOUT_SECONDS and not problem_notified:
-        notify_transmitter_problem(last_node_id)
-        problem_notified = True
+        # Node is still down, so repeat status=no every hour
+        elif time_since_last_status_update >= STATUS_UPDATE_INTERVAL_SECONDS:
+            update_php_node_status("no")
+            last_status_update_time = current_time
+            node_is_down = True
+
 
 def process_message(serial_connection, raw_message):
-    """ Handles one received radio message.
-    Order:
-        1. Receive message
-        2. Check message format
-        3. If valid, send the ACK password
-        4. Update transmitter awake/sleep status
-        5. Upload pedestrian count
-        6. Upload survey counts.
     """
-    
-    global last_awake_message_time
-    global transmitter_awake
-    global problem_notified
+    Handles one received radio message.
+
+    New logic:
+        Correct message:
+            - Send ACK
+            - Send status=yes to PHP
+            - Upload to database
+
+        Wrong message:
+            - Send status=no to PHP
+            - Do not send ACK
+            - Do not upload to database
+    """
+
+    global last_valid_message_time
+    global last_status_update_time
+    global node_is_down
     global last_node_id
+
     raw_message = raw_message.strip()
 
-    # Ignore empty messages
     if not raw_message:
         return
 
-    timestamp = datetime.now().isoformat(timespec="seconds")
-    print(f"\n[{timestamp}] Received message: {raw_message}")
-
     try:
         node_id, pedestrian_count, a, b, c, d, e, mode, battery_code = parse_combined_message(raw_message)
-        battery_voltage = (1.024*4095)/battery_code
-    except ValueError:
-    print(f"Invalid message ignored: {error}")
-    print(f"Bad message was: {repr(raw_message)}")
+
+        # battery_code is checked for validity, but not used right now.
+        _ = battery_code
+
+    except ValueError as error:
+        print(f"Invalid message ignored: {error}")
+        print(f"Bad message was: {repr(raw_message)}")
+
+        # Wrong message means node/problem status should be shown.
+        update_php_node_status("no")
+        last_status_update_time = time.time()
+        node_is_down = True
+
         return
 
-    # Send ACK only after the message format is valid
+    # Valid message received
     send_acknowledgement(serial_connection)
-    
-    # Update transmitter awake/sleep status
-    last_node_id = node_id
-    if mode == 1:
-        transmitter_awake = True
-        last_awake_message_time = time.time()
-        problem_notified = False
-        print("Transmitter status: AWAKE")
 
-    elif mode == 0:
-        transmitter_awake = False
-        last_awake_message_time = None
-        problem_notified = False
-        print("Transmitter status: SLEEP")
-    
+    current_time = time.time()
+    last_valid_message_time = current_time
+    last_status_update_time = current_time
+    node_is_down = False
+    last_node_id = node_id
+
+    # Valid message means node is working.
+    update_php_node_status("yes")
+
     # Upload pedestrian count
     ped_success, ped_status, ped_response = upload_pedestrian_count(
         node_id,
         pedestrian_count
     )
 
-    if ped_success:
-        print(f"Pedestrian upload successful.")
-    else:
+    if not ped_success:
         print("Pedestrian upload failed.")
         print(f"HTTP status: {ped_status}")
         print(f"Server response/error: {ped_response}")
-      
-  # Upload survey counts
-    survey_success, survey_status, survey_response = upload_survey_counts(node_id, a, b, c, d, e )
 
-    if survey_success:
-        print(f"Survey upload successful.")
-    else:
+    # Upload survey counts
+    survey_success, survey_status, survey_response = upload_survey_counts(
+        node_id,
+        a,
+        b,
+        c,
+        d,
+        e
+    )
+
+    if not survey_success:
         print("Survey upload failed.")
         print(f"HTTP status: {survey_status}")
         print(f"Server response/error: {survey_response}")
+
 
 def main():
     serial_connection = serial.Serial(
@@ -359,25 +430,26 @@ def main():
                     line, buffer = buffer.split("\n", 1)
                     process_message(serial_connection, line)
 
-            # If message arrives without newline, process after 3 second
+            # If message arrives without newline, process after 3 seconds.
             if buffer.strip() and last_data_time is not None:
                 if time.time() - last_data_time > 3.0:
                     process_message(serial_connection, buffer)
                     buffer = ""
                     last_data_time = None
-                    
-            # Check whether awake transmitter has missed too many messages
-            check_transmitter_health()
-            
+
+            # New logic:
+            # If no valid message is received for 1 hour, send status=no.
+            check_node_timeout_and_update_php()
+
             time.sleep(0.05)
-          
+
     except KeyboardInterrupt:
         print("Program stopped by user.")
 
     finally:
         serial_connection.close()
         print("Serial port closed.")
+
+
 if __name__ == "__main__":
     main()
-
-
